@@ -1,5 +1,7 @@
 # Deploy and Host Redis with Railway
 
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/redis-8-with-redisinsight-ui-and-persist?referralCode=20H68q)
+
 Redis is an in-memory data store used as a cache, session store, queue backend and document and vector database. This community template runs Redis 8.10 from the official image with a generated password, AOF and RDB persistence on a volume, the RedisInsight web UI behind a login, and daily backups to a Railway Bucket.
 
 ## About Hosting Redis
