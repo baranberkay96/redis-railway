@@ -1,0 +1,377 @@
+{
+  "name": "Redis 8 with RedisInsight UI and Persistence",
+  "description": "Password-protected Redis 8 with JSON, Search, persistence and a web UI.",
+  "category": "Storage",
+  "tags": [
+    "redis",
+    "redisinsight",
+    "cache",
+    "key-value",
+    "redis-json",
+    "redis-search",
+    "vector-search",
+    "backups"
+  ],
+  "image": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/redis.svg",
+  "upstream": {
+    "redis": "redis:8.10.3 (official image, Debian trixie, Redis Open Source 8.10.3 with RediSearch 8.10.1, RedisJSON 8.10.0, RedisTimeSeries 8.10.1, RedisBloom 8.10.1; image built 2026-10-28)",
+    "redisinsight": "redis/redisinsight:3.8.0 (released 2026-07-21)",
+    "gateway": "caddy:2.11.7-alpine (Caddy 2.11.7)",
+    "backup": "redis:8.10.3-alpine + rclone 1.75.2 (rclone/rclone image)",
+    "checked": "2026-10-31"
+  },
+  "services": {
+    "Redis": {
+      "icon": "https://devicons.railway.app/i/redis.svg",
+      "source": {
+        "image": "redis:8.10.3"
+      },
+      "startCommand": "/bin/bash -c 'set -eu; D=\"${RAILWAY_VOLUME_MOUNT_PATH:-/data}\"; D=\"${D%/}\"; C=/etc/redis-railway; F=\"$C/redis.conf\"; log() { echo \"redis-railway: $*\"; }; num() { case \"$1\" in \"\"|*[!0-9]*) echo \"$2\" ;; *) echo \"$1\" ;; esac; }; low() { echo \"$1\" | tr \"[:upper:]\" \"[:lower:]\"; }; w() { echo \"$*\" >> \"$F\"; }; P=\"${REDIS_PASSWORD:-}\"; R=\"^[A-Za-z0-9._~-]{16,}$\"; if [[ ! \"$P\" =~ $R ]]; then log \"REDIS_PASSWORD needs 16+ characters of A-Z a-z 0-9 . _ ~ -\"; exit 1; fi; H=$(( $(num \"$(grep -m 1 MemTotal /proc/meminfo | tr -s \" \" | cut -d \" \" -f 2)\" 1048576) * 1024 )); L=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null || echo max); L=$(num \"$L\" \"$H\"); if [ \"$L\" -gt \"$H\" ]; then L=$H; fi; MM=$(low \"${REDIS_MAXMEMORY:-auto}\"); PCT=$(num \"${REDIS_MAXMEMORY_PERCENT:-75}\" 75); if [ \"$PCT\" -lt 10 ] || [ \"$PCT\" -gt 95 ]; then PCT=75; fi; R=\"^[0-9]+([kmg]b?)?$\"; if [ -z \"$MM\" ] || [ \"$MM\" = auto ]; then MM=$(( L / 100 * PCT )); MS=\"${PCT}% of ${L}\"; elif [[ \"$MM\" =~ $R ]]; then MS=REDIS_MAXMEMORY; else log \"REDIS_MAXMEMORY must be auto, 0 or a size like 512mb\"; exit 1; fi; AOF=$(low \"${REDIS_APPENDONLY:-yes}\"); case \"$AOF\" in yes|true|on|1) AOF=yes ;; *) AOF=no ;; esac; SAVE=$(low \"${REDIS_SAVE-3600 1 300 100 60 10000}\"); case \"$SAVE\" in off|none|no|false) SAVE=\"\" ;; esac; R=\"^[0-9 ]*$\"; if [[ ! \"$SAVE\" =~ $R ]]; then log \"REDIS_SAVE must be seconds/changes pairs or off\"; exit 1; fi; mkdir -p \"$D\"; rm -rf \"$D/lost+found\"; cd \"$D\"; M=\"$D/.railway-appendonly\"; PRE=\"\"; if [ \"$AOF\" = yes ] && [ -s dump.rdb ] && { [ ! -d appendonlydir ] || [ \"$(cat \"$M\" 2>/dev/null || true)\" = no ]; }; then if [ -d appendonlydir ]; then rm -rf appendonlydir.stale-*; mv appendonlydir \"appendonlydir.stale-$(date -u +%Y%m%dT%H%M%SZ)\"; fi; PRE=\"preload-file rdb:$D/dump.rdb\"; log \"AOF was off: loading dump.rdb once to build the AOF\"; fi; echo \"$AOF\" > \"$M\"; chown -R redis:redis \"$D\"; umask 077; mkdir -p \"$C\"; : > \"$F\"; w \"bind * -::*\"; w \"protected-mode yes\"; w \"requirepass $P\"; w \"dir $D\"; w \"appendonly $AOF\"; w \"appendfsync $(low \"${REDIS_APPENDFSYNC:-everysec}\")\"; if [ -n \"$SAVE\" ]; then w \"save $SAVE\"; fi; if [ -n \"$PRE\" ]; then w \"$PRE\"; fi; w \"maxmemory $MM\"; w \"maxmemory-policy $(low \"${REDIS_MAXMEMORY_POLICY:-noeviction}\")\"; w \"enable-protected-configs no\"; w \"enable-debug-command no\"; w \"enable-module-command no\"; if [ -n \"${REDIS_EXTRA_CONFIG:-}\" ]; then echo \"$REDIS_EXTRA_CONFIG\" >> \"$F\"; fi; chown -R redis:redis \"$C\"; export SKIP_FIX_PERMS=1; log \"maxmemory $MM ($MS), appendonly $AOF, save ${SAVE:-off}, dir $D\"; if [ -z \"$SAVE\" ]; then exec docker-entrypoint.sh redis-server \"$F\" --save \"\"; fi; exec docker-entrypoint.sh redis-server \"$F\"'",
+      "preDeployCommand": null,
+      "healthcheckPath": null,
+      "healthcheckTimeout": null,
+      "restartPolicyType": "ALWAYS",
+      "numReplicas": 1,
+      "cronSchedule": null,
+      "publicDomain": false,
+      "targetPort": null,
+      "tcpProxy": {
+        "port": 6379
+      },
+      "volume": {
+        "mountPath": "/data"
+      },
+      "variables": {
+        "REDIS_PASSWORD": {
+          "defaultValue": "${{ secret(32, \"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ\") }}",
+          "description": "Password of the default user, generated at deploy (letters only, URL-safe). Required by every connection, private and public.",
+          "required": true
+        },
+        "REDISPASSWORD": {
+          "defaultValue": "${{REDIS_PASSWORD}}",
+          "description": "Alias of REDIS_PASSWORD for clients that expect the unseparated name.",
+          "required": true
+        },
+        "REDISUSER": {
+          "defaultValue": "default",
+          "description": "Redis user for clients (the built-in default user).",
+          "required": true
+        },
+        "REDISHOST": {
+          "defaultValue": "${{RAILWAY_PRIVATE_DOMAIN}}",
+          "description": "Private hostname of this service (redis.railway.internal), reachable only from services in the same environment.",
+          "required": true
+        },
+        "REDISPORT": {
+          "defaultValue": "6379",
+          "description": "Port Redis listens on (IPv4 and IPv6).",
+          "required": true
+        },
+        "REDIS_URL": {
+          "defaultValue": "redis://${{REDISUSER}}:${{REDIS_PASSWORD}}@${{REDISHOST}}:${{REDISPORT}}",
+          "description": "Connection string over the private network. Reference it from other services as ${{Redis.REDIS_URL}}.",
+          "required": true
+        },
+        "REDIS_PUBLIC_URL": {
+          "defaultValue": "redis://${{REDISUSER}}:${{REDIS_PASSWORD}}@${{RAILWAY_TCP_PROXY_DOMAIN}}:${{RAILWAY_TCP_PROXY_PORT}}",
+          "description": "Connection string through the public TCP proxy (no TLS, egress-billed). Empty if the proxy is removed.",
+          "required": false
+        },
+        "REDIS_MAXMEMORY": {
+          "defaultValue": "auto",
+          "description": "Memory cap. auto = REDIS_MAXMEMORY_PERCENT of the container limit; or a size like 256mb / 2gb; 0 = no cap.",
+          "required": false
+        },
+        "REDIS_MAXMEMORY_PERCENT": {
+          "defaultValue": "75",
+          "description": "Share of the container memory limit used by auto (10-95). The rest is headroom for fork during RDB/AOF rewrites.",
+          "required": false
+        },
+        "REDIS_MAXMEMORY_POLICY": {
+          "defaultValue": "noeviction",
+          "description": "What happens at the cap. noeviction = refuse writes (stores, queues). allkeys-lru / allkeys-lfu = evict (caches).",
+          "required": false
+        },
+        "REDIS_APPENDONLY": {
+          "defaultValue": "yes",
+          "description": "yes = append-only file (AOF) persistence on the volume. no = RDB snapshots only (or nothing if REDIS_SAVE=off).",
+          "required": false
+        },
+        "REDIS_APPENDFSYNC": {
+          "defaultValue": "everysec",
+          "description": "AOF fsync policy: everysec (at most ~1 s of writes lost on a crash), always (slow, safest) or no.",
+          "required": false
+        },
+        "REDIS_SAVE": {
+          "defaultValue": "3600 1 300 100 60 10000",
+          "description": "RDB snapshot points as 'seconds changes' pairs (Redis defaults). off = no RDB snapshots.",
+          "required": false
+        },
+        "REDIS_EXTRA_CONFIG": {
+          "defaultValue": "",
+          "description": "Extra redis.conf lines appended last, one directive per line (raw editor), e.g. ACL users or io-threads 4.",
+          "required": false
+        },
+        "RAILWAY_DEPLOYMENT_DRAINING_SECONDS": {
+          "defaultValue": "60",
+          "description": "Seconds Redis gets after SIGTERM to write its final snapshot and fsync the AOF on redeploy.",
+          "required": false
+        }
+      }
+    },
+    "RedisInsight": {
+      "icon": "https://cdn.jsdelivr.net/gh/redis/RedisInsight@3.8.0/resources/logo.svg",
+      "source": {
+        "image": "redis/redisinsight:3.8.0"
+      },
+      "startCommand": null,
+      "preDeployCommand": null,
+      "healthcheckPath": "/api/health",
+      "healthcheckTimeout": 300,
+      "restartPolicyType": "ALWAYS",
+      "numReplicas": 1,
+      "cronSchedule": null,
+      "publicDomain": false,
+      "targetPort": null,
+      "tcpProxy": null,
+      "volume": {
+        "mountPath": "/data"
+      },
+      "variables": {
+        "PORT": {
+          "defaultValue": "5540",
+          "description": "Port Railway's healthcheck probes (/api/health); must match RI_APP_PORT.",
+          "required": true
+        },
+        "RI_APP_PORT": {
+          "defaultValue": "5540",
+          "description": "Port RedisInsight listens on.",
+          "required": true
+        },
+        "RI_APP_HOST": {
+          "defaultValue": "::",
+          "description": "Listen on all IPv4 and IPv6 addresses (Railway's private network can resolve to IPv6).",
+          "required": true
+        },
+        "RAILWAY_RUN_UID": {
+          "defaultValue": "0",
+          "description": "Run as root so RedisInsight can write the root-owned Railway volume at /data (the image's user is node).",
+          "required": true
+        },
+        "RI_REDIS_HOST": {
+          "defaultValue": "${{Redis.REDISHOST}}",
+          "description": "Preconfigured database: Redis private hostname.",
+          "required": true
+        },
+        "RI_REDIS_PORT": {
+          "defaultValue": "${{Redis.REDISPORT}}",
+          "description": "Preconfigured database: Redis port.",
+          "required": true
+        },
+        "RI_REDIS_USERNAME": {
+          "defaultValue": "${{Redis.REDISUSER}}",
+          "description": "Preconfigured database: Redis user.",
+          "required": true
+        },
+        "RI_REDIS_PASSWORD": {
+          "defaultValue": "${{Redis.REDIS_PASSWORD}}",
+          "description": "Preconfigured database: Redis password (follows the Redis service by reference).",
+          "required": true
+        },
+        "RI_REDIS_ALIAS": {
+          "defaultValue": "Redis on Railway",
+          "description": "Name of the preconfigured database in RedisInsight's list.",
+          "required": false
+        },
+        "RI_ENCRYPTION_KEY": {
+          "defaultValue": "${{ secret(48, \"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\") }}",
+          "description": "Encrypts the passwords RedisInsight stores in /data. Do not change it later (stored passwords become unreadable).",
+          "required": true
+        },
+        "RI_ACCEPT_TERMS_AND_CONDITIONS": {
+          "defaultValue": "false",
+          "description": "false = you accept RedisInsight's terms in the UI on first visit. true = accepted for you, analytics and notifications off.",
+          "required": false
+        },
+        "RI_DATABASE_MANAGEMENT": {
+          "defaultValue": "true",
+          "description": "true = databases can be added and edited in the UI. false = only the preconfigured Redis is shown.",
+          "required": false
+        },
+        "RI_STDOUT_LOGGER": {
+          "defaultValue": "true",
+          "description": "Log to stdout so logs show in Railway.",
+          "required": false
+        },
+        "RI_FILES_LOGGER": {
+          "defaultValue": "false",
+          "description": "No log files on the volume (they would grow without bound).",
+          "required": false
+        }
+      }
+    },
+    "RedisInsight Gateway": {
+      "icon": "https://cdn.jsdelivr.net/gh/redis/RedisInsight@3.8.0/resources/logo.svg",
+      "source": {
+        "repo": "baranberkay96/redis-railway",
+        "rootDirectory": "/services/redisinsight-gateway"
+      },
+      "startCommand": null,
+      "preDeployCommand": null,
+      "healthcheckPath": "/healthz",
+      "healthcheckTimeout": 300,
+      "restartPolicyType": "ALWAYS",
+      "numReplicas": 1,
+      "cronSchedule": null,
+      "publicDomain": true,
+      "targetPort": 8080,
+      "tcpProxy": null,
+      "volume": null,
+      "variables": {
+        "PORT": {
+          "defaultValue": "8080",
+          "description": "Port the gateway listens on; Railway's healthcheck probes /healthz here.",
+          "required": true
+        },
+        "BASIC_AUTH_USERNAME": {
+          "defaultValue": "admin",
+          "description": "Login name for RedisInsight (A-Z a-z 0-9 . _ -).",
+          "required": true
+        },
+        "BASIC_AUTH_PASSWORD": {
+          "defaultValue": "${{ secret(32, \"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\") }}",
+          "description": "Login password for RedisInsight, generated at deploy (16+ characters). Hashed with bcrypt at start.",
+          "required": true
+        },
+        "REDISINSIGHT_UPSTREAM": {
+          "defaultValue": "${{RedisInsight.RAILWAY_PRIVATE_DOMAIN}}:${{RedisInsight.RI_APP_PORT}}",
+          "description": "RedisInsight on the private network; the gateway is its only public entry point.",
+          "required": true
+        },
+        "REDISINSIGHT_URL": {
+          "defaultValue": "https://${{RAILWAY_PUBLIC_DOMAIN}}",
+          "description": "Public URL of RedisInsight (log in with BASIC_AUTH_USERNAME / BASIC_AUTH_PASSWORD).",
+          "required": false
+        }
+      }
+    },
+    "Redis Backup": {
+      "icon": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/rclone.svg",
+      "source": {
+        "repo": "baranberkay96/redis-railway",
+        "rootDirectory": "/services/backup"
+      },
+      "startCommand": null,
+      "preDeployCommand": null,
+      "healthcheckPath": null,
+      "healthcheckTimeout": null,
+      "restartPolicyType": "NEVER",
+      "numReplicas": 1,
+      "cronSchedule": "20 3 * * *",
+      "publicDomain": false,
+      "targetPort": null,
+      "tcpProxy": null,
+      "volume": null,
+      "variables": {
+        "REDIS_HOST": {
+          "defaultValue": "${{Redis.REDISHOST}}",
+          "description": "Redis private hostname.",
+          "required": true
+        },
+        "REDIS_PORT": {
+          "defaultValue": "${{Redis.REDISPORT}}",
+          "description": "Redis port.",
+          "required": true
+        },
+        "REDIS_USER": {
+          "defaultValue": "${{Redis.REDISUSER}}",
+          "description": "Redis user (needs SYNC for redis-cli --rdb; the default user has it).",
+          "required": true
+        },
+        "REDIS_PASSWORD": {
+          "defaultValue": "${{Redis.REDIS_PASSWORD}}",
+          "description": "Redis password (follows the Redis service by reference).",
+          "required": true
+        },
+        "BACKUP_S3_BUCKET": {
+          "defaultValue": "${{Bucket.BUCKET}}",
+          "description": "Railway Bucket that stores the backups.",
+          "required": true
+        },
+        "BACKUP_S3_ENDPOINT": {
+          "defaultValue": "${{Bucket.ENDPOINT}}",
+          "description": "Bucket S3 endpoint.",
+          "required": true
+        },
+        "BACKUP_S3_REGION": {
+          "defaultValue": "${{Bucket.REGION}}",
+          "description": "Bucket region.",
+          "required": true
+        },
+        "BACKUP_S3_ACCESS_KEY_ID": {
+          "defaultValue": "${{Bucket.ACCESS_KEY_ID}}",
+          "description": "Bucket access key.",
+          "required": true
+        },
+        "BACKUP_S3_SECRET_ACCESS_KEY": {
+          "defaultValue": "${{Bucket.SECRET_ACCESS_KEY}}",
+          "description": "Bucket secret key.",
+          "required": true
+        },
+        "BACKUP_S3_FORCE_PATH_STYLE": {
+          "defaultValue": "false",
+          "description": "Keep false: Railway Buckets use virtual-hosted-style URLs. true only for buckets whose Credentials tab says path-style.",
+          "required": false
+        },
+        "BACKUP_PREFIX": {
+          "defaultValue": "redis",
+          "description": "Folder in the bucket; each run writes {prefix}/{UTC timestamp}/.",
+          "required": false
+        },
+        "BACKUP_RETENTION_DAYS": {
+          "defaultValue": "14",
+          "description": "Delete complete runs older than this many days.",
+          "required": false
+        },
+        "BACKUP_KEEP_MIN": {
+          "defaultValue": "3",
+          "description": "Always keep at least this many complete runs, whatever their age.",
+          "required": false
+        },
+        "BACKUP_COMPRESSION": {
+          "defaultValue": "gzip",
+          "description": "gzip = dump.rdb.gz; none = plain dump.rdb.",
+          "required": false
+        },
+        "BACKUP_WAIT_SECONDS": {
+          "defaultValue": "300",
+          "description": "How long a run waits for Redis to answer PING before failing.",
+          "required": false
+        },
+        "BACKUP_WORK_DIR": {
+          "defaultValue": "/tmp",
+          "description": "Scratch directory for the snapshot (needs free space of about the RDB size).",
+          "required": false
+        },
+        "BACKUP_RESTORE_RUN": {
+          "defaultValue": "",
+          "description": "Set to a run folder (e.g. 20261031T032000Z) to REPLACE all Redis data with that backup on the next run. Clear afterwards.",
+          "required": false
+        },
+        "BACKUP_RESTORE_PORT": {
+          "defaultValue": "6390",
+          "description": "Port of the temporary restore server inside this job; Redis connects to it over the private network.",
+          "required": false
+        },
+        "BACKUP_RESTORE_TIMEOUT": {
+          "defaultValue": "1800",
+          "description": "Seconds a restore may take before it is aborted (Redis is then promoted back unchanged or partially synced).",
+          "required": false
+        }
+      }
+    }
+  },
+  "buckets": [
+    "Bucket"
+  ]
+}

@@ -1,0 +1,44 @@
+# Basic-auth gateway in front of RedisInsight.
+# RedisInsight has no login of its own, so the RedisInsight service stays on the
+# private network and this gateway is its only public entry point.
+{
+	admin off
+	persist_config off
+	auto_https off
+	servers {
+		# Railway's edge terminates TLS and forwards X-Forwarded-* headers.
+		trusted_proxies static private_ranges 100.0.0.0/8
+	}
+}
+
+:{$PORT:8080} {
+	# Unauthenticated liveness endpoint for the Railway healthcheck (no data).
+	handle /healthz {
+		respond "ok" 200
+	}
+
+	# Browsers send cached basic-auth credentials with cross-site requests and
+	# WebSocket handshakes too. Refuse anything whose Origin is not this site
+	# (custom domains included, the comparison uses the request's own Host).
+	@cross_site {
+		header Origin *
+		not header Origin https://{host}
+	}
+	handle @cross_site {
+		respond "Cross-origin request refused" 403
+	}
+
+	handle {
+		basic_auth {
+			{$BASIC_AUTH_USERNAME} {$BASIC_AUTH_HASH}
+		}
+		header {
+			X-Frame-Options SAMEORIGIN
+			-Server
+		}
+		reverse_proxy {$REDISINSIGHT_UPSTREAM} {
+			# Pub/Sub, Profiler and bulk actions stream over socket.io; pass chunks through immediately.
+			flush_interval -1
+		}
+	}
+}
